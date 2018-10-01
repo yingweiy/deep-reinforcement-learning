@@ -73,7 +73,7 @@ class PPO:
                 # uncomment to utilize your own clipped function!
                 # L = -clipped_surrogate(policy, old_probs, states, actions, rewards, epsilon=epsilon, beta=beta)
 
-                L = -self.clipped_surrogate(self.policy, old_probs, states, actions, rewards,
+                L = -self.clipped_surrogate(old_probs, states, actions, rewards,
                                        epsilon=epsilon, beta=beta)
                 self.optimizer.zero_grad()
                 L.backward()
