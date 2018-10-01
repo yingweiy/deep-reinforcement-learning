@@ -186,6 +186,6 @@ class Policy(nn.Module):
         return self.sig(self.fc2(x))
 
 if __name__ == '__main__':
-    envs = parallelEnv('PongDeterministic-v4', n=1, seed=1234)
+    envs = parallelEnv('PongDeterministic-v4', n=8, seed=1234)
     agent = PPO(envs=envs)
     agent.train()
