@@ -3,7 +3,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
-from JSAnimation.IPython_display import display_animation
+#from JSAnimation.IPython_display import display_animation
 from matplotlib import animation
 from IPython.display import display
 import random as rand
