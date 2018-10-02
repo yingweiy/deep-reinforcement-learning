@@ -166,7 +166,7 @@ class PPO:
                action_list, reward_list
 
 class Policy(nn.Module):
-    def __init__(self):
+    def __init__(self, n_actions = 2):
         super(Policy, self).__init__()
         # 80x80x2 to 38x38x4
         # 2 channel from the stacked frame
@@ -177,17 +177,15 @@ class Policy(nn.Module):
 
         # two fully connected layer
         self.fc1 = nn.Linear(self.size, 256)
-        self.fc2 = nn.Linear(256, 1)
-
-        # Sigmoid to
-        self.sig = nn.Sigmoid()
+        self.fc2 = nn.Linear(256, n_actions)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = x.view(-1, self.size)
         x = F.relu(self.fc1(x))
-        return self.sig(self.fc2(x))
+        x = F.relu(self.fc2(x))
+        return F.softmax(x, dim=1)
 
 if __name__ == '__main__':
     envs = parallelEnv('PongDeterministic-v4', n=8, seed=1234)
