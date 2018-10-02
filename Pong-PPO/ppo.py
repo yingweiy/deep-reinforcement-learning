@@ -6,12 +6,14 @@ from tqdm import tqdm
 import torch.optim as optim
 from parallelEnv import parallelEnv
 import pong_utils
+from torch.distributions import Categorical
 
 class PPO:
     def __init__(self, envs):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.policy = Policy().to(self.device)
         self.envs = envs
+        self.n_actions = 2
 
     def clipped_surrogate(self, old_probs, states, actions, rewards,
                           discount=0.995, epsilon=0.1, beta=0.01):
@@ -27,13 +29,13 @@ class PPO:
         rewards_normalized = (rewards_future - mean[:, np.newaxis]) / std[:, np.newaxis]
 
         # convert everything into pytorch tensors and move to gpu if available
-        actions = torch.tensor(actions, dtype=torch.int8, device=self.device)
-        old_probs = torch.tensor(old_probs, dtype=torch.float, device=self.device)
+        actions = torch.tensor(actions, dtype=torch.int16, device=self.device)
+        old_probs = torch.stack(old_probs).squeeze(2)
+
         rewards = torch.tensor(rewards_normalized, dtype=torch.float, device=self.device)
 
         # convert states to policy (or probability)
-        new_probs = self.states_to_prob(states)
-        new_probs = torch.where(actions == pong_utils.RIGHT, new_probs, 1.0 - new_probs)
+        new_probs = self.states_to_prob(states, actions)
 
         # ratio for clipping
         ratio = new_probs / old_probs
@@ -54,9 +56,8 @@ class PPO:
         # this is desirable because we have normalized our rewards
         return torch.mean(clipped_surrogate + beta * entropy)
 
-
-    def train(self, episode=800, discount_rate = 0.99, epsilon = 0.1, beta=0.01,
-              tmax = 320, SGD_epoch = 4, lr=1e-4):
+    def train(self, episode=800, discount_rate=0.99, epsilon=0.1, beta=0.01,
+              tmax=320, SGD_epoch=4, lr=1e-4):
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
         # keep track of progress
         mean_rewards = []
@@ -74,9 +75,9 @@ class PPO:
                 # L = -clipped_surrogate(policy, old_probs, states, actions, rewards, epsilon=epsilon, beta=beta)
 
                 L = -self.clipped_surrogate(old_probs, states, actions, rewards,
-                                       epsilon=epsilon, beta=beta)
+                                            epsilon=epsilon, beta=beta)
                 self.optimizer.zero_grad()
-                L.backward()
+                L.backward(retain_graph=True)
                 self.optimizer.step()
                 del L
 
@@ -95,11 +96,13 @@ class PPO:
                 print("Episode: {0:d}, score: {1:f}".format(e + 1, np.mean(total_rewards)))
                 print(total_rewards)
 
-
-    def states_to_prob(self, states):
-        states = torch.stack(states)
-        policy_input = states.view(-1, *states.shape[-3:])
-        return self.policy(policy_input).view(states.shape[:-3])
+    def states_to_prob(self, states, actions):
+        action_indice = (actions - 4).type(torch.LongTensor).to(self.device)  # LEFT-1, RIGHT-0
+        statesv = torch.stack(states)
+        policy_input = statesv.view(-1, *statesv.shape[-3:])
+        policy_output = self.policy(policy_input).view([320, 8, 2])  # t_max, n_workers, n_actions
+        probs = torch.gather(policy_output, 2, action_indice).squeeze(2)
+        return probs
 
     # collect trajectories for a parallelized parallelEnv object
     def collect_trajectories(self, tmax=200, nrand=5):
@@ -134,12 +137,13 @@ class PPO:
             # probs will only be used as the pi_old
             # no gradient propagation is needed
             # so we move it to the cpu
-            probs = self.policy(batch_input).squeeze().cpu().detach().numpy()
+            probs_tensor = self.policy(batch_input)
+            m = Categorical(probs_tensor)
+            action_indice = m.sample().unsqueeze(1)
+            probs = torch.gather(probs_tensor, 1, action_indice)
+            action = np.where(action_indice == 0, pong_utils.RIGHT, pong_utils.LEFT)
 
-            action = np.where(np.random.rand(n) < probs, pong_utils.RIGHT, pong_utils.LEFT)
-            probs = np.where(action == pong_utils.RIGHT, probs, 1.0 - probs)
-
-            # advance the game (0=no action)
+            # advance the game (0=no action)a
             # we take one action and skip game forward
             fr1, re1, is_done, _ = self.envs.step(action)
             fr2, re2, is_done, _ = self.envs.step([0] * n)
