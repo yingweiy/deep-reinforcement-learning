@@ -8,6 +8,7 @@ from parallelEnv import parallelEnv
 import pong_utils
 from torch.distributions import Categorical
 
+
 class PPO:
     def __init__(self, envs):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -29,7 +30,7 @@ class PPO:
         rewards_normalized = (rewards_future - mean[:, np.newaxis]) / std[:, np.newaxis]
 
         # convert everything into pytorch tensors and move to gpu if available
-        actions = torch.tensor(actions, dtype=torch.int16, device=self.device)
+        actions = torch.tensor(actions, dtype=torch.int64, device=self.device)
         old_probs = torch.stack(old_probs).squeeze(2)
 
         rewards = torch.tensor(rewards_normalized, dtype=torch.float, device=self.device)
@@ -97,11 +98,10 @@ class PPO:
                 print(total_rewards)
 
     def states_to_prob(self, states, actions):
-        action_indice = (actions - 4).type(torch.LongTensor).to(self.device)  # LEFT-1, RIGHT-0
         statesv = torch.stack(states)
         policy_input = statesv.view(-1, *statesv.shape[-3:])
         policy_output = self.policy(policy_input).view([320, 8, 2])  # t_max, n_workers, n_actions
-        probs = torch.gather(policy_output, 2, action_indice).squeeze(2)
+        probs = torch.gather(policy_output, 2, actions).squeeze(2)
         return probs
 
     # collect trajectories for a parallelized parallelEnv object
@@ -139,13 +139,13 @@ class PPO:
             # so we move it to the cpu
             probs_tensor = self.policy(batch_input)
             m = Categorical(probs_tensor)
-            action_indice = m.sample().unsqueeze(1)
-            probs = torch.gather(probs_tensor, 1, action_indice)
-            action = np.where(action_indice == 0, pong_utils.RIGHT, pong_utils.LEFT)
+            action = m.sample().unsqueeze(1)
+            probs = torch.gather(probs_tensor, 1, action)
+            action = action.cpu().numpy()
 
             # advance the game (0=no action)a
             # we take one action and skip game forward
-            fr1, re1, is_done, _ = self.envs.step(action)
+            fr1, re1, is_done, _ = self.envs.step(action + 4)
             fr2, re2, is_done, _ = self.envs.step([0] * n)
 
             reward = re1 + re2
