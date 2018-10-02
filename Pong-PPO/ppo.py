@@ -14,7 +14,8 @@ class PPO:
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.policy = Policy().to(self.device)
         self.envs = envs
-        self.n_actions = 2
+        self.n_actions = self.policy.n_actions
+        self.tmax = 320
 
     def clipped_surrogate(self, old_probs, states, actions, rewards,
                           discount=0.995, epsilon=0.1, beta=0.01):
@@ -58,7 +59,7 @@ class PPO:
         return torch.mean(clipped_surrogate + beta * entropy)
 
     def train(self, episode=800, discount_rate=0.99, epsilon=0.1, beta=0.01,
-              tmax=320, SGD_epoch=4, lr=1e-4):
+              SGD_epoch=4, lr=1e-4):
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
         # keep track of progress
         mean_rewards = []
@@ -66,7 +67,7 @@ class PPO:
         for e in tqdm(range(episode)):
             # collect trajectories
             old_probs, states, actions, rewards = \
-                self.collect_trajectories(tmax=tmax)
+                self.collect_trajectories(tmax=self.tmax)
 
             total_rewards = np.sum(rewards, axis=0)
 
@@ -100,12 +101,12 @@ class PPO:
     def states_to_prob(self, states, actions):
         statesv = torch.stack(states)
         policy_input = statesv.view(-1, *statesv.shape[-3:])
-        policy_output = self.policy(policy_input).view([320, 8, 2])  # t_max, n_workers, n_actions
+        policy_output = self.policy(policy_input).view([self.tmax, -1, self.n_actions])  # t_max, n_workers, n_actions
         probs = torch.gather(policy_output, 2, actions).squeeze(2)
         return probs
 
     # collect trajectories for a parallelized parallelEnv object
-    def collect_trajectories(self, tmax=200, nrand=5):
+    def collect_trajectories(self, tmax, nrand=5):
 
         # number of parallel instances
         n = len(self.envs.ps)
@@ -168,6 +169,7 @@ class PPO:
 class Policy(nn.Module):
     def __init__(self, n_actions = 2):
         super(Policy, self).__init__()
+        self.n_actions = n_actions
         # 80x80x2 to 38x38x4
         # 2 channel from the stacked frame
         self.conv1 = nn.Conv2d(2, 4, kernel_size=6, stride=2, bias=False)
