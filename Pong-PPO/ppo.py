@@ -67,7 +67,7 @@ class PPO:
         for e in tqdm(range(episode)):
             # collect trajectories
             old_probs, states, actions, rewards = \
-                self.collect_trajectories(tmax=self.tmax)
+                self.collect_trajectories(tmax=self.tmax, discount=discount_rate)
 
             total_rewards = np.sum(rewards, axis=0)
 
@@ -180,14 +180,15 @@ class Policy(nn.Module):
         # two fully connected layer
         self.fc1 = nn.Linear(self.size, 256)
         self.fc2 = nn.Linear(256, n_actions)
+        self.sm = nn.Softmax(dim=1)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = x.view(-1, self.size)
         x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        return F.softmax(x, dim=1)
+        x = self.fc2(x)
+        return self.sm(x)
 
 if __name__ == '__main__':
     envs = parallelEnv('PongDeterministic-v4', n=8, seed=1234)
