@@ -79,7 +79,7 @@ class PPO:
                 L = -self.clipped_surrogate(old_probs, states, actions, rewards,
                                             epsilon=epsilon, beta=beta)
                 self.optimizer.zero_grad()
-                L.backward(retain_graph=True)
+                L.backward()
                 self.optimizer.step()
                 del L
 
@@ -138,7 +138,7 @@ class PPO:
             # probs will only be used as the pi_old
             # no gradient propagation is needed
             # so we move it to the cpu
-            probs_tensor = self.policy(batch_input)
+            probs_tensor = self.policy(batch_input).detach()
             m = Categorical(probs_tensor)
             action = m.sample().unsqueeze(1)
             probs = torch.gather(probs_tensor, 1, action)
