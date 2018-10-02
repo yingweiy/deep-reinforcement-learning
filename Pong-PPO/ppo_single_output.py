@@ -98,10 +98,7 @@ class PPO:
 
     def states_to_prob(self, states):
         states = torch.stack(states)
-        print('State Shape:', states.shape)
         policy_input = states.view(-1, *states.shape[-3:])
-        print('Policy Input Shape:', policy_input.shape)
-        print(self.policy(policy_input).view(states.shape[:-3])
         return self.policy(policy_input).view(states.shape[:-3])
 
     # collect trajectories for a parallelized parallelEnv object
